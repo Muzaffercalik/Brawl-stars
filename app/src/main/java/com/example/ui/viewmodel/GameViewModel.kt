@@ -201,6 +201,57 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     // 2D Entity Locations (Within 1000 x 1000 digital virtual canvas boundary)
     val playerX = MutableStateFlow(500f)
     val playerY = MutableStateFlow(750f)
+    val playerFacingAngle = MutableStateFlow(-1.5708f) // Default looking straight up
+
+    // Advanced dynamic controls & stats
+    val speedBoostActive = MutableStateFlow(false)
+    val shieldActive = MutableStateFlow(false)
+    val gadgetCharges = MutableStateFlow(3)
+
+    // Game Mode Custom State trackers (Gem Grab, Heist, Brawl Ball, Chaos Arena etc)
+    val safeHp = MutableStateFlow(10000f)
+    val safeMaxHp = MutableStateFlow(10000f)
+    val ballX = MutableStateFlow(500f)
+    val ballY = MutableStateFlow(500f)
+    val ballVx = MutableStateFlow(0f)
+    val ballVy = MutableStateFlow(0f)
+    val gemCount = MutableStateFlow(0)
+
+    fun updatePlayerFacing(offset: Offset) {
+        if (offset.x != 0f || offset.y != 0f) {
+            playerFacingAngle.value = kotlin.math.atan2(offset.y, offset.x)
+        }
+    }
+
+    fun triggerPlayerGadget() {
+        if (!_gameActive.value) return
+        val currentCharges = gadgetCharges.value
+        if (currentCharges > 0) {
+            gadgetCharges.value = currentCharges - 1
+            viewModelScope.launch {
+                speedBoostActive.value = true
+                shieldActive.value = true
+                _recentScreamMessage.value = "${_liveBrawler.value?.name ?: "Savaşçı"}: \"SÜPER KALKAN VE HIZ GADGETI ETKİNLEŞTİRİLDİ!\""
+                delay(4000)
+                speedBoostActive.value = false
+                shieldActive.value = false
+            }
+        }
+    }
+
+    fun setSelectedMode(mode: String) {
+        selectedMode.value = mode
+        _recentScreamMessage.value = "YENİ MOD SEÇİLDİ: ${mode.uppercase()}"
+        // Reset special elements depending on selected mode
+        if (mode == "Heist") {
+            safeHp.value = 10000f
+        } else if (mode == "Brawl Ball") {
+            ballX.value = 500f
+            ballY.value = 500f
+        } else if (mode == "Gem Grab") {
+            gemCount.value = 0
+        }
+    }
 
     private val _bots = MutableStateFlow<List<SimBot>>(emptyList())
     val bots = _bots.asStateFlow()
@@ -219,6 +270,17 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun startMatch(brawler: Brawler) {
         viewModelScope.launch {
             _liveBrawler.value = brawler
+
+            // Reset advanced features
+            playerFacingAngle.value = -1.5708f
+            gadgetCharges.value = 3
+            speedBoostActive.value = false
+            shieldActive.value = false
+            safeHp.value = 10000f
+            safeMaxHp.value = 10000f
+            ballX.value = 500f
+            ballY.value = 500f
+            gemCount.value = 0
 
             // Calculate level multiplier
             val dbBrawlers = repository.unlockedBrawlers.firstOrNull() ?: emptyList()
@@ -315,6 +377,21 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
                     // Collisions
                     if (p.isFromPlayer) {
+                        // Heist Safe collision
+                        if (selectedMode.value == "Heist") {
+                            val sdx = 500f - p.x
+                            val sdy = 250f - p.y
+                            val sdist = sqrt(sdx * sdx + sdy * sdy)
+                            if (sdist < (60f + p.radius)) {
+                                safeHp.value = maxOf(0f, safeHp.value - p.damage)
+                                p.active = false
+                                spawnBlood(500f, 250f, extViolent = false)
+                                if (safeHp.value <= 0f) {
+                                    endMatch(victory = true)
+                                }
+                            }
+                        }
+
                         // Collision check player bullets vs bots
                         for (bot in _bots.value) {
                             if (!bot.isDead) {
@@ -364,6 +441,79 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
                 _projectiles.value = projList
+
+                // 1. Brawl Ball physics
+                if (selectedMode.value == "Brawl Ball") {
+                    val bx = ballX.value + ballVx.value
+                    val by = ballY.value + ballVy.value
+
+                    // apply friction
+                    ballVx.value *= 0.94f
+                    ballVy.value *= 0.94f
+
+                    // Bounces off vertical borders
+                    if (bx < 40f) {
+                        ballX.value = 40f
+                        ballVx.value = -ballVx.value
+                    } else if (bx > 960f) {
+                        ballX.value = 960f
+                        ballVx.value = -ballVx.value
+                    } else {
+                        ballX.value = bx
+                    }
+
+                    // Top Goal / Bottom Goal checks
+                    if (by < 40f) {
+                        if (bx in 350f..650f) {
+                            _recentScreamMessage.value = "GOOOOOOL!!! TAKIMIN HARİKA GOL ATTI!"
+                            endMatch(victory = true)
+                        } else {
+                            ballY.value = 40f
+                            ballVy.value = -ballVy.value
+                        }
+                    } else if (by > 960f) {
+                        if (bx in 350f..650f) {
+                            _recentScreamMessage.value = "KENDİ KALENE GOL! RAKİP KAZANDI!"
+                            endMatch(victory = false)
+                        } else {
+                            ballY.value = 960f
+                            ballVy.value = -ballVy.value
+                        }
+                    } else {
+                        ballY.value = by
+                    }
+                }
+
+                // 2. Gem Grab Spawner Counter logic (elements gather over time)
+                if (selectedMode.value == "Gem Grab" && msCounter % 3000 == 0) {
+                    gemCount.value += 1
+                    _recentScreamMessage.value = "CENTRAL MİNERAL ORTAYA ÇIKTI! TOPLAM ELEMENT: ${gemCount.value} / 10"
+                    if (gemCount.value >= 10) {
+                        endMatch(victory = true)
+                    }
+                }
+
+                // 3. Chaos Arena massive vortex center pull gravity force
+                if (selectedMode.value == "Chaos Arena" && msCounter % 150 == 0) {
+                    val dx = 500f - playerX.value
+                    val dy = 500f - playerY.value
+                    val dist = sqrt(dx * dx + dy * dy)
+                    if (dist > 15f) {
+                        playerX.value += (dx / dist) * 2.5f
+                        playerY.value += (dy / dist) * 2.5f
+                    }
+                    _bots.value.forEach { bot ->
+                        if (!bot.isDead) {
+                            val bdx = 500f - bot.x
+                            val bdy = 500f - bot.y
+                            val bdist = sqrt(bdx * bdx + bdy * bdy)
+                            if (bdist > 15f) {
+                                bot.x += (bdx / bdist) * 2f
+                                bot.y += (bdy / bdist) * 2f
+                            }
+                        }
+                    }
+                }
 
                 // Keep Alive Bots Intelligence (Simple AI chasing Player)
                 val botList = _bots.value
@@ -471,13 +621,29 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         if (!_gameActive.value) return
         val modifierBrawler = _liveBrawler.value ?: return
 
-        val speed = 9f * modifierBrawler.speed
+        val baseSpeed = 9f * modifierBrawler.speed
+        val multiplier = if (speedBoostActive.value) 1.5f else 1.0f
+        val speed = baseSpeed * multiplier
         val newX = playerX.value + offset.x * speed
         val newY = playerY.value + offset.y * speed
 
         // Clamp inside canvas bounds
         playerX.value = maxOf(30f, minOf(970f, newX))
         playerY.value = maxOf(30f, minOf(970f, newY))
+
+        // Brawl Ball collision: kick the ball if player collides with it
+        if (selectedMode.value == "Brawl Ball") {
+            val dx = ballX.value - playerX.value
+            val dy = ballY.value - playerY.value
+            val dist = sqrt(dx * dx + dy * dy)
+            if (dist < 46f) {
+                // Kick ball in aiming direction
+                val kickAngle = playerFacingAngle.value
+                ballVx.value = cos(kickAngle) * 25f
+                ballVy.value = sin(kickAngle) * 25f
+                _recentScreamMessage.value = "${modifierBrawler.name} TOPA ABANDI!"
+            }
+        }
     }
 
     fun triggerPlayerNormalAttack() {
@@ -485,8 +651,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val currentBrawler = _liveBrawler.value ?: return
 
         val bProjList = _projectiles.value.toMutableList()
-        // Fire 3 fan bullet spreads
-        val baseAngle = -1.5708f // Straight up
+        // Fire 3 fan bullet spreads based on independent turning/facing angle!
+        val baseAngle = playerFacingAngle.value
         val spreads = if (currentBrawler.id == "kassap") listOf(0f) else listOf(-0.15f, 0f, 0.15f)
 
         for (spread in spreads) {

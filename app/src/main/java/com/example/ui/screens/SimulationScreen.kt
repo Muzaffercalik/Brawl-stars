@@ -7,6 +7,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -16,11 +18,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -29,6 +33,7 @@ import com.example.data.model.Brawler
 import com.example.ui.components.VirtualJoystick
 import com.example.ui.viewmodel.GameViewModel
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SimulationScreen(
     viewModel: GameViewModel,
@@ -50,6 +55,17 @@ fun SimulationScreen(
     val superCharge by viewModel.playerSuperCharge.collectAsState()
     val ultimateCharge by viewModel.playerUltimateCharge.collectAsState()
 
+    // Real-time custom state mechanics
+    val facingAngle by viewModel.playerFacingAngle.collectAsState()
+    val speedBoost by viewModel.speedBoostActive.collectAsState()
+    val shieldActive by viewModel.shieldActive.collectAsState()
+    val gadgetCharges by viewModel.gadgetCharges.collectAsState()
+    val safeHp by viewModel.safeHp.collectAsState()
+    val safeMaxHp by viewModel.safeMaxHp.collectAsState()
+    val ballX by viewModel.ballX.collectAsState()
+    val ballY by viewModel.ballY.collectAsState()
+    val gemCount by viewModel.gemCount.collectAsState()
+
     val pX by viewModel.playerX.collectAsState()
     val pY by viewModel.playerY.collectAsState()
     val bots by viewModel.bots.collectAsState()
@@ -65,53 +81,212 @@ fun SimulationScreen(
         }
     }
 
+    val modesList = remember {
+        listOf(
+            "Gem Grab", "Bounty", "Heist", "Showdown",
+            "Brawl Ball", "Hot Zone", "Knockout", "Chaos Arena"
+        )
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(Color(0xFF080707))
     ) {
+        // Main Immersive Full-Bleed Content Column
         Column(modifier = Modifier.fillMaxSize()) {
-            // Gameplay Stats row
-            Row(
+
+            // SECTION 1: Game Modes selection bar (Highly visible selectable tabs at top)
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Color(0xFF0C0C0C))
-                    .border(BorderStroke(1.dp, Color(0xFF222222)))
                     .statusBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .border(BorderStroke(1.dp, Color(0xFF222222)))
+                    .padding(vertical = 10.dp)
+            ) {
+                Text(
+                    text = "AKTİF SAVAŞ MODLARI",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Black,
+                    color = Color.White,
+                    letterSpacing = 2.sp,
+                    style = androidx.compose.ui.text.TextStyle(
+                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                    ),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+                )
+
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(modesList) { mode ->
+                        val isActive = mode == modeSelected
+                        val modeGradient = if (isActive) {
+                            Brush.verticalGradient(
+                                colors = listOf(Color(0xFFCC0000), Color(0xFF770000))
+                            )
+                        } else {
+                            Brush.verticalGradient(
+                                colors = listOf(Color(0xFF161616), Color(0xFF161616))
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(modeGradient)
+                                .border(
+                                    BorderStroke(
+                                        1.dp,
+                                        if (isActive) Color(0xFFFF0000).copy(alpha = 0.6f) else Color(0xFF333333)
+                                    ),
+                                    RoundedCornerShape(12.dp)
+                                )
+                                .clickable { viewModel.setSelectedMode(mode) }
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                when (mode) {
+                                    "Gem Grab" -> Icon(Icons.Default.Star, contentDescription = "Gem", tint = Color(0xFFB300FF), modifier = Modifier.size(11.dp))
+                                    "Heist" -> Icon(Icons.Default.Lock, contentDescription = "Safe", tint = Color(0xFFFFCC00), modifier = Modifier.size(11.dp))
+                                    "Brawl Ball" -> Icon(Icons.Default.PlayArrow, contentDescription = "Ball", tint = Color.White, modifier = Modifier.size(11.dp))
+                                    "Chaos Arena" -> Icon(Icons.Default.Warning, contentDescription = "Chaos", tint = Color.Red, modifier = Modifier.size(11.dp))
+                                    else -> Icon(Icons.Default.Info, contentDescription = "Info", tint = Color.Gray, modifier = Modifier.size(11.dp))
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = mode.uppercase(),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = if (isActive) Color.White else Color.Gray,
+                                    letterSpacing = 0.5.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // SECTION 2: LIVE METERS & MINIMAP HEADER
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF070707))
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Column {
+                // Left Column: Player quick facts
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = mapSelected.title.uppercase(),
-                        fontSize = 13.sp,
+                        text = (brawler?.name ?: "Gladyatör").uppercase(),
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Black,
                         color = Color.White,
-                        letterSpacing = (-0.3).sp,
+                        letterSpacing = (-0.5).sp,
                         style = androidx.compose.ui.text.TextStyle(
                             fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                         )
                     )
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "$modeSelected | ZORLUK: $diffSelected",
+                        text = "HARİTA: " + mapSelected.title.uppercase(),
                         fontSize = 9.sp,
-                        color = Color(0xFFFF0000).copy(alpha = 0.8f),
                         fontWeight = FontWeight.Bold,
+                        color = Color.Gray,
                         letterSpacing = 0.5.sp
                     )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    // Health bar
+                    Row(
+                        modifier = Modifier.width(180.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        LinearProgressIndicator(
+                            progress = if (playerMaxHp > 0) playerHp / playerMaxHp else 0f,
+                            color = Color(0xFF00FFCC),
+                            trackColor = Color(0xFF222222),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(10.dp)
+                                .clip(RoundedCornerShape(5.dp))
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "${playerHp.toInt()} HP",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color(0xFF00FFCC)
+                        )
+                    }
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                // Middle Stats (Timer & Score Kills)
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "SÜRE", fontSize = 8.sp, color = Color.Gray, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
-                        Text(text = "${timeLeft}s", fontSize = 14.sp, fontWeight = FontWeight.Black, color = Color.White)
+                        Text(text = "SÜRE", fontSize = 7.sp, color = Color.Gray, fontWeight = FontWeight.Black)
+                        Text(text = "${timeLeft}s", fontSize = 15.sp, fontWeight = FontWeight.Black, color = Color.White)
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "LEŞLER", fontSize = 8.sp, color = Color.Gray, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
-                        Text(text = "$kills", fontSize = 14.sp, fontWeight = FontWeight.Black, color = Color(0xFFFF0000))
+                        Text(text = "LEŞLER", fontSize = 7.sp, color = Color.Gray, fontWeight = FontWeight.Black)
+                        Text(text = "$kills", fontSize = 15.sp, fontWeight = FontWeight.Black, color = Color(0xFFFF003C))
                     }
                 }
+
+                // Right HUD element: CIRCULAR DYNAMIC MINIMAP IN THE CORNER
+                Box(
+                    modifier = Modifier
+                        .size(80.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF101014))
+                        .border(1.5.dp, Color(0xFFFF003C).copy(alpha = 0.4f), CircleShape)
+                ) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val mr = size.width / 2f
+                        val mapCenter = Offset(mr, mr)
+
+                        // Draw background radar sweep rings
+                        drawCircle(Color(0x1A00FFCC), radius = mr * 0.8f, center = mapCenter, style = Stroke(1f))
+                        drawCircle(Color(0x15FF003C), radius = mr * 0.5f, center = mapCenter, style = Stroke(1f))
+
+                        // Draw center mode anchor
+                        if (modeSelected == "Gem Grab" || modeSelected == "Chaos Arena") {
+                            drawCircle(Color(0xFFB300FF), radius = 4f, center = mapCenter) // Portal / Mine central point
+                        } else if (modeSelected == "Heist") {
+                            val safeDotY = mr + (250f - 500f) / 1000f * (mr * 1.6f)
+                            drawCircle(Color(0xFFFFCC00), radius = 4f, center = Offset(mapCenter.x, safeDotY))
+                        } else if (modeSelected == "Brawl Ball") {
+                            val ballDotX = mr + (ballX - 500f) / 1000f * (mr * 1.6f)
+                            val ballDotY = mr + (ballY - 500f) / 1000f * (mr * 1.6f)
+                            drawCircle(Color.White, radius = 3.5f, center = Offset(ballDotX, ballDotY))
+                        }
+
+                        // Draw Player Node Dot scaled (Green dot)
+                        val pDotX = mr + (pX - 500f) / 1000f * (mr * 1.6f)
+                        val pDotY = mr + (pY - 500f) / 1000f * (mr * 1.6f)
+                        drawCircle(Color(0xFF00FFCC), radius = 5f, center = Offset(pDotX, pDotY))
+
+                        // Draw Enemy Bots Dots (Red dots)
+                        bots.forEach { bot ->
+                            if (!bot.isDead) {
+                                val bDotX = mr + (bot.x - 500f) / 1000f * (mr * 1.6f)
+                                val bDotY = mr + (bot.y - 500f) / 1000f * (mr * 1.6f)
+                                drawCircle(Color(0xFFFF003C), radius = 3.5f, center = Offset(bDotX, bDotY))
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
 
                 IconButton(
                     onClick = { viewModel.cancelActiveMatch() },
@@ -124,91 +299,164 @@ fun SimulationScreen(
                 }
             }
 
-            // Screams alert banner (pop-ups in real-time on kills!)
+            // Screams alert banner for interactive atmosphere
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF220A0E))
-                    .border(1.dp, Color(0xFFFF003C).copy(alpha = 0.3f))
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                contentAlignment = Alignment.CenterStart
+                    .background(Color(0xFF1E0709))
+                    .border(1.dp, Color(0xFFFF003C).copy(alpha = 0.2f))
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Warning, contentDescription = "Scream Log", tint = Color(0xFFFF003C), modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(Icons.Default.Warning, contentDescription = "Radio", tint = Color(0xFFFF003C), modifier = Modifier.size(13.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = screamLog ?: "RAKİPLERİNİ BUL VE PARÇALA!",
+                        text = screamLog ?: "MEYDAN OKUMAYI TAMAMLA & PARLAK ZAFERE ULAŞ!",
                         fontSize = 11.sp,
-                        color = Color(0xFFFFB3B3),
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Left
+                        color = Color(0xFFFF7788),
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }
 
-            // Central 2D Vector Arena graphics
+            // SECTION 3: CORE DETAILED 2D ARENA DRAWINGS
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .background(Color(0xFF0C0A0B))
+                    .background(Color(0xFF0C0C0E))
             ) {
-                Canvas(
-                    modifier = Modifier.fillMaxSize()
-                ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
                     val scaleX = size.width / 1000f
                     val scaleY = size.height / 1000f
 
-                    // Draw floor base
+                    // 1. Cybernetic Floor Design
                     drawRect(
                         brush = Brush.radialGradient(
-                            colors = listOf(mapColor.copy(alpha = 0.35f), Color(0xFF050508)),
+                            colors = listOf(mapColor.copy(alpha = 0.35f), Color(0xFF070707)),
                             center = Offset(pX * scaleX, pY * scaleY),
-                            radius = size.width * 0.8f
+                            radius = size.width * 0.82f
                         )
                     )
 
-                    // Draw static map layouts: chemical lava lakes / pools / walls
-                    if (mapSelected.title.contains("Lav") || mapSelected.title.contains("Cehennem")) {
-                        // Draw Hell Fire Pool
+                    // Draw grid map guides
+                    for (i in 1..9) {
+                        val gx = (i * 100f) * scaleX
+                        val gy = (i * 100f) * scaleY
+                        drawLine(Color(0x16FFFFFF), Offset(gx, 0f), Offset(gx, size.height), strokeWidth = 1f)
+                        drawLine(Color(0x16FFFFFF), Offset(0f, gy), Offset(size.width, gy), strokeWidth = 1f)
+                    }
+
+                    // 2. Mode Specific Centerpiece entities
+                    // Mode A: CHAOS ARENA pulsing black vortex
+                    if (modeSelected == "Chaos Arena") {
                         drawCircle(
-                            color = Color(0xFFFF5722).copy(alpha = 0.25f),
+                            color = Color(0xFF1E0005).copy(alpha = 0.65f),
+                            radius = 260f * scaleX,
+                            center = Offset(500f * scaleX, 500f * scaleY)
+                        )
+                        drawCircle(
+                            color = Color(0xFFFF003C).copy(alpha = 0.2f),
                             radius = 160f * scaleX,
-                            center = Offset(250f * scaleX, 350f * scaleY)
+                            center = Offset(500f * scaleX, 500f * scaleY)
                         )
                         drawCircle(
-                            color = Color(0xFFFF5722).copy(alpha = 0.45f),
-                            radius = 120f * scaleX,
-                            center = Offset(250f * scaleX, 350f * scaleY),
-                            style = Stroke(width = 4f)
+                            color = Color(0xFFFF0000).copy(alpha = 0.4f),
+                            radius = 100f * scaleX,
+                            center = Offset(500f * scaleX, 500f * scaleY),
+                            style = Stroke(width = 8f)
                         )
                         drawCircle(
-                            color = Color(0xFFFF5722).copy(alpha = 0.25f),
-                            radius = 160f * scaleX,
-                            center = Offset(750f * scaleX, 350f * scaleY)
-                        )
-                        drawCircle(
-                            color = Color(0xFFFF5722).copy(alpha = 0.45f),
-                            radius = 120f * scaleX,
-                            center = Offset(750f * scaleX, 350f * scaleY),
-                            style = Stroke(width = 4f)
-                        )
-                    } else if (mapSelected.title.contains("Asit") || mapSelected.title.contains("Hastane")) {
-                        // Draw Toxic acid pool
-                        drawCircle(
-                            color = Color(0xFF1DB954).copy(alpha = 0.25f),
-                            radius = 180f * scaleX,
-                            center = Offset(500f * scaleX, 250f * scaleY)
+                            color = Color.Black,
+                            radius = 45f * scaleX,
+                            center = Offset(500f * scaleX, 500f * scaleY)
                         )
                     }
 
-                    // Draw static defense walls
-                    val walls = listOf(
+                    // Mode B: GEM GRAB mine crystal portal
+                    if (modeSelected == "Gem Grab") {
+                        drawCircle(
+                            color = Color(0xFF220044).copy(alpha = 0.4f),
+                            radius = 120f * scaleX,
+                            center = Offset(500f * scaleX, 500f * scaleY)
+                        )
+                        drawRoundRect(
+                            color = Color(0xFFB300FF),
+                            topLeft = Offset(465f * scaleX, 465f * scaleY),
+                            size = Size(70f * scaleX, 70f * scaleY),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(18f)
+                        )
+                        drawRoundRect(
+                            color = Color.White,
+                            topLeft = Offset(475f * scaleX, 475f * scaleY),
+                            size = Size(50f * scaleX, 50f * scaleY),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(12f),
+                            style = Stroke(width = 4f)
+                        )
+                    }
+
+                    // Mode C: HEIST Safe Vault at (500, 250)
+                    if (modeSelected == "Heist") {
+                        // Drawing Safe Vault
+                        val sw = 160f * scaleX
+                        val sh = 100f * scaleY
+                        val sx = 420f * scaleX
+                        val sy = 200f * scaleY
+                        drawRoundRect(
+                            color = Color(0xFF26262B),
+                            topLeft = Offset(sx, sy),
+                            size = Size(sw, sh),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(20f)
+                        )
+                        drawRoundRect(
+                            color = Color(0xFFFFCC00),
+                            topLeft = Offset(sx, sy),
+                            size = Size(sw, sh),
+                            style = Stroke(width = 3.dp.toPx()),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(20f)
+                        )
+                        drawCircle(color = Color.Yellow, radius = 22f * scaleX, center = Offset(500f * scaleX, 250f * scaleY))
+                        drawCircle(color = Color.Black, radius = 8f * scaleX, center = Offset(500f * scaleX, 250f * scaleY))
+
+                        // Safe health text & bar
+                        val safeHpRatio = safeHp / safeMaxHp
+                        val sBarW = 120f * scaleX
+                        val sBarH = 8f * scaleY
+                        val sBarX = 440f * scaleX
+                        val sBarY = 160f * scaleY
+
+                        drawRect(Color.Gray, topLeft = Offset(sBarX, sBarY), size = Size(sBarW, sBarH))
+                        drawRect(Color(0xFFFFCC00), topLeft = Offset(sBarX, sBarY), size = Size(sBarW * safeHpRatio, sBarH))
+                    }
+
+                    // Mode D: BRAWL BALL soccer sphere bouncing around
+                    if (modeSelected == "Brawl Ball") {
+                        val ballPx = ballX * scaleX
+                        val ballPy = ballY * scaleY
+                        // Ball shadow
+                        drawCircle(Color(0x7F000000), radius = 22f * scaleX, center = Offset(ballPx + 5f, ballPy + 5f))
+                        // Ball Body
+                        drawCircle(Color.White, radius = 20f * scaleX, center = Offset(ballPx, ballPy))
+                        drawCircle(Color.Black, radius = 20f * scaleX, center = Offset(ballPx, ballPy), style = Stroke(width = 3f))
+                        // Pentagons patterns
+                        drawCircle(Color.Black, radius = 7f * scaleX, center = Offset(ballPx, ballPy))
+                    }
+
+                    // 3. Static Obstacles Layouts
+                    if (mapSelected.title.contains("Lav") || mapSelected.title.contains("Cehennem")) {
+                        drawCircle(Color(0xFFFF4500).copy(alpha = 0.3f), radius = 150f * scaleX, center = Offset(250f * scaleX, 350f * scaleY))
+                        drawCircle(Color(0xFFFF8800).copy(alpha = 0.3f), radius = 150f * scaleX, center = Offset(750f * scaleX, 350f * scaleY))
+                    } else if (mapSelected.title.contains("Asit") || mapSelected.title.contains("Hastane")) {
+                        drawCircle(Color(0xFF00FF3C).copy(alpha = 0.25f), radius = 170f * scaleX, center = Offset(500f * scaleX, 250f * scaleY))
+                    }
+
+                    // Static defense walls structures
+                    val boundaryWalls = listOf(
                         RectBounds(180f, 600f, 150f, 40f),
                         RectBounds(670f, 600f, 150f, 40f),
                         RectBounds(400f, 400f, 200f, 45f)
                     )
-                    for (wall in walls) {
+                    boundaryWalls.forEach { wall ->
                         drawRoundRect(
                             color = Color(0xFF1E1E24),
                             topLeft = Offset(wall.x * scaleX, wall.y * scaleY),
@@ -216,254 +464,347 @@ fun SimulationScreen(
                             cornerRadius = androidx.compose.ui.geometry.CornerRadius(12f)
                         )
                         drawRoundRect(
-                            color = Color(0xFF2C2C35),
+                            color = Color(0xFFFF003C).copy(alpha = 0.4f),
                             topLeft = Offset(wall.x * scaleX, wall.y * scaleY),
                             size = Size(wall.w * scaleX, wall.h * scaleY),
-                            style = Stroke(width = 2f)
+                            style = Stroke(width = 2f),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(12f)
                         )
                     }
 
-                    // Draw blood spatters (violence simulator gore particles!)
+                    // 4. Violence Gore Blood Splatters Splashes
                     bloodList.forEach { blood ->
                         drawCircle(
-                            color = Color(0xFF900C3F).copy(alpha = blood.opacity),
+                            color = Color(0xFF990000).copy(alpha = blood.opacity),
                             radius = blood.radius * scaleX,
                             center = Offset(blood.x * scaleX, blood.y * scaleY)
                         )
-                        if (blood.isExtremelyViolent) {
-                            // Splattered jagged chunks
-                            drawCircle(
-                                color = Color(0xFFFF003C).copy(alpha = blood.opacity * 0.8f),
-                                radius = (blood.radius * 0.4f) * scaleX,
-                                center = Offset((blood.x + 10) * scaleX, (blood.y - 10) * scaleY)
-                            )
-                        }
                     }
 
-                    // Draw live AI bot gladiators
+                    // 5. Enemy AI Gladiators Drawing
                     bots.forEach { bot ->
                         if (!bot.isDead) {
-                            // Avatar circle body
-                            drawCircle(
-                                color = Color(android.graphics.Color.parseColor(bot.colorHex)),
-                                radius = 24f * scaleX,
-                                center = Offset(bot.x * scaleX, bot.y * scaleY)
-                            )
-                            drawCircle(
-                                color = Color.Black,
-                                radius = 24f * scaleX,
-                                center = Offset(bot.x * scaleX, bot.y * scaleY),
-                                style = Stroke(width = 3f)
+                            val br = 24f * scaleX
+                            val botCenter = Offset(bot.x * scaleX, bot.y * scaleY)
+                            // Outer shadow
+                            drawCircle(Color(0x40000000), radius = br * 1.2f, center = botCenter)
+                            // Body
+                            drawCircle(Color(android.graphics.Color.parseColor(bot.colorHex)), radius = br, center = botCenter)
+                            drawCircle(Color.Black, radius = br, center = botCenter, style = Stroke(width = 3f))
+
+                            // Facing pointer indicator
+                            drawLine(
+                                color = Color.White.copy(alpha = 0.7f),
+                                start = botCenter,
+                                end = Offset(botCenter.x, botCenter.y + 35f * scaleX),
+                                strokeWidth = 4f
                             )
 
-                            // Bot Health stats meter bar
-                            val hpRatio = bot.hp / bot.maxHp
-                            val barW = 60f * scaleX
-                            val barH = 5f * scaleY
-                            val barX = (bot.x - 30f) * scaleX
-                            val barY = (bot.y - 38f) * scaleY
-
-                            drawRect(
-                                color = Color.Gray,
-                                topLeft = Offset(barX, barY),
-                                size = Size(barW, barH)
-                            )
-                            drawRect(
-                                color = Color(0xFFFF003C),
-                                topLeft = Offset(barX, barY),
-                                size = Size(barW * hpRatio, barH)
-                            )
+                            // Health indicator bar
+                            val ratio = bot.hp / bot.maxHp
+                            val bw = 64f * scaleX
+                            val bh = 6f * scaleY
+                            val bx = (bot.x - 32f) * scaleX
+                            val by = (bot.y - 36f) * scaleY
+                            drawRect(Color.Gray, topLeft = Offset(bx, by), size = Size(bw, bh))
+                            drawRect(Color(0xFFFF003C), topLeft = Offset(bx, by), size = Size(bw * ratio, bh))
                         }
                     }
 
-                    // Draw Live player gladiator
+                    // 6. MAIN CUSTOMIZABLE FIGHTER CHARACTER IN THE CENTER
                     brawler?.let { b ->
-                        val pSize = 28f * scaleX
+                        val pSize = 30f * scaleX
+                        val playerCenter = Offset(pX * scaleX, pY * scaleY)
+
+                        // Glowing select ring underneath
+                        val selectColor = if (shieldActive) Color(0xFF00FFCC).copy(alpha = 0.5f) else Color(0xFFFF003C).copy(alpha = 0.35f)
                         drawCircle(
-                            color = Color(0xFFFF003C),
-                            radius = pSize,
-                            center = Offset(pX * scaleX, pY * scaleY)
+                            color = selectColor,
+                            radius = pSize * 1.5f,
+                            center = playerCenter
+                        )
+
+                        // Main core geometric body
+                        drawCircle(Color(0xFF16161C), radius = pSize, center = playerCenter)
+                        drawCircle(Color.White, radius = pSize, center = playerCenter, style = Stroke(width = 4f))
+
+                        // Inner symbol details (Fighter emblem)
+                        drawCircle(Color(0xFFFF003C), radius = pSize * 0.4f, center = playerCenter)
+
+                        // 3RD JOYSTICK FACING/STRAFING ANGLE RAY POINTER!
+                        // This proves the dedicated direction controls works: independent pointing ray!
+                        val pointerLength = 85f * scaleX
+                        val endX = pX + kotlin.math.cos(facingAngle) * pointerLength
+                        val endY = pY + kotlin.math.sin(facingAngle) * pointerLength
+                        val pointerEnd = Offset(endX * scaleX, endY * scaleY)
+
+                        // Aim guide line
+                        drawLine(
+                            color = Color(0xFF00FFCC).copy(alpha = 0.8f),
+                            start = playerCenter,
+                            end = pointerEnd,
+                            strokeWidth = 6f
+                        )
+                        // Aim tip target crosshair dot
+                        drawCircle(
+                            color = Color(0xFF00FFCC),
+                            radius = 6f * scaleX,
+                            center = pointerEnd
                         )
                         drawCircle(
                             color = Color.White,
-                            radius = pSize,
-                            center = Offset(pX * scaleX, pY * scaleY),
-                            style = Stroke(width = 4f)
+                            radius = 12f * scaleX,
+                            center = pointerEnd,
+                            style = Stroke(width = 2f)
                         )
 
-                        // Light range pointer
-                        val angle = -1.5708f // aiming top direction
-                        val length = 80f * scaleX
-                        drawLine(
-                            color = Color(0xFFFF003C).copy(alpha = 0.5f),
-                            start = Offset(pX * scaleX, pY * scaleY),
-                            end = Offset(
-                                x = (pX + kotlin.math.cos(angle) * length) * scaleX,
-                                y = (pY + kotlin.math.sin(angle) * length) * scaleY
-                            ),
-                            strokeWidth = 6f
-                        )
-                    }
-
-                    // Draw flying projectiles (flying energy bullets / ultimate waves)
-                    projectiles.forEach { proj ->
-                        val r = proj.radius * scaleX
-                        val color = if (proj.isFromPlayer) {
-                            if (proj.isSuperUltimate) Color(0xFFB300FF) else Color(0xFFFF9900)
-                        } else {
-                            Color(0xFFFFCC00)
-                        }
-
-                        drawCircle(
-                            color = color,
-                            radius = r,
-                            center = Offset(proj.x * scaleX, proj.y * scaleY)
-                        )
-                        if (proj.isSuperUltimate) {
-                            // Double aura
+                        // Active shield bubble force-field
+                        if (shieldActive) {
                             drawCircle(
-                                color = Color.White,
-                                radius = r * 0.5f,
-                                center = Offset(proj.x * scaleX, proj.y * scaleY)
+                                color = Color(0xFF00FFCC).copy(alpha = 0.22f),
+                                radius = pSize * 1.9f,
+                                center = playerCenter
+                            )
+                            drawCircle(
+                                color = Color(0xFF00FFCC).copy(alpha = 0.6f),
+                                radius = pSize * 1.9f,
+                                center = playerCenter,
+                                style = Stroke(width = 3f)
                             )
                         }
+                    }
+
+                    // 7. Projectiles (ammo shots/energy beams)
+                    projectiles.forEach { proj ->
+                        val pr = proj.radius * scaleX
+                        val pcolor = if (proj.isFromPlayer) {
+                            if (proj.isSuperUltimate) Color(0xFFB300FF) else Color(0xFF00FFCC)
+                        } else {
+                            Color(0xFFFFB300)
+                        }
+                        // Inner core
+                        drawCircle(pcolor, radius = pr, center = Offset(proj.x * scaleX, proj.y * scaleY))
+                        drawCircle(Color.White, radius = pr * 0.5f, center = Offset(proj.x * scaleX, proj.y * scaleY))
                     }
                 }
             }
 
-            // Life stats hud & action controllers overlay
-            Column(
+            // SECTION 4: CONTROL CONSOLE OVERLAY (Semi-transparent ergonomic handheld interface)
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF131317))
-                    .padding(bottom = 24.dp, top = 12.dp, start = 16.dp, end = 16.dp)
+                    .background(Color(0xFF101014))
+                    .padding(bottom = 24.dp, top = 14.dp, start = 16.dp, end = 16.dp)
             ) {
-                // Lifemeter
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = (brawler?.name ?: "Gladyatör") + " SAĞLIK",
-                        fontSize = 10.sp,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "${playerHp.toInt()} / ${playerMaxHp.toInt()}",
-                        fontSize = 11.sp,
-                        color = Color(0xFF1DB954),
-                        fontWeight = FontWeight.Black
-                    )
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                LinearProgressIndicator(
-                    progress = if (playerMaxHp > 0) playerHp / playerMaxHp else 0f,
-                    color = Color(0xFF1DB954),
-                    trackColor = Color(0xFF2C2C35),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Control panel block
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Twin Joystick Left
-                    VirtualJoystick(
-                        size = 130.dp,
-                        onValueChange = { offset ->
-                            viewModel.handlePlayerMove(offset)
-                        }
-                    )
+                    
+                    // JOYSTICK 1 (Left): movement classic translucent controller
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "HAREKET JOYSTICK",
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Gray,
+                            letterSpacing = 1.sp,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+                        VirtualJoystick(
+                            modifier = Modifier
+                                .testTag("movement_joystick")
+                                .shadow(8.dp, CircleShape),
+                            size = 110.dp,
+                            onValueChange = { offset ->
+                                viewModel.handlePlayerMove(offset)
+                            }
+                        )
+                    }
 
-                    // Action buttons (Normal Attack, Super, Ultimate) Right
+                    // MIDDLE SECTION: COOL DETAILED SKILLS TRIGGER CLUSTER
                     Column(
-                        horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            // Normal Fire Attack button
-                            RoundActionButton(
-                                label = "SALDIR",
-                                subtitle = "Normal",
-                                value = 1f,
-                                max = 1f,
-                                color = Color(0xFFFF5722),
-                                onClick = { viewModel.triggerPlayerNormalAttack() }
-                            )
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            // ACTIVE SKILL 1: GADGET Tech (Utility boost speeds & shields)
+                            Box(
+                                modifier = Modifier
+                                    .size(54.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (gadgetCharges > 0) Color(0xFF006655).copy(alpha = 0.4f)
+                                        else Color(0xFF222226)
+                                    )
+                                    .border(
+                                        2.dp,
+                                        if (gadgetCharges > 0) Color(0xFF00FFCC) else Color(0xFF444444),
+                                        CircleShape
+                                    )
+                                    .clickable(enabled = gadgetCharges > 0) {
+                                        viewModel.triggerPlayerGadget()
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(Icons.Default.Build, contentDescription = "Gadget", tint = if (gadgetCharges > 0) Color(0xFF00FFCC) else Color.Gray, modifier = Modifier.size(16.dp))
+                                    Text(
+                                        text = "$gadgetCharges/3",
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = if (gadgetCharges > 0) Color.White else Color.Gray
+                                    )
+                                }
+                            }
 
-                            // Super Skill (Yellow)
-                            RoundActionButton(
-                                label = "SÜPER",
-                                subtitle = brawler?.superName?.take(7) ?: "Yetenek",
-                                value = superCharge,
-                                max = 100f,
-                                color = Color(0xFFFFD700),
-                                activeColor = Color(0xFFB300FF),
-                                onClick = { viewModel.triggerPlayerSuperAbility() }
-                            )
+                            // ACTIVE SKILL 2: SUPER Attack Ability (Yellow supercharge)
+                            val isSuperReady = superCharge >= 100f
+                            Box(
+                                modifier = Modifier
+                                    .size(62.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (isSuperReady) Color(0xFF996600).copy(alpha = 0.4f)
+                                        else Color(0xFF222226)
+                                    )
+                                    .border(
+                                        2.5.dp,
+                                        if (isSuperReady) Color(0xFFFFCC00) else Color(0xFF444444),
+                                        CircleShape
+                                    )
+                                    .clickable(enabled = isSuperReady) {
+                                        viewModel.triggerPlayerSuperAbility()
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(
+                                        Icons.Default.Star,
+                                        contentDescription = "Super",
+                                        tint = if (isSuperReady) Color(0xFFFFCC00) else Color.Gray,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text(
+                                        text = if (isSuperReady) "HAZIR" else "${superCharge.toInt()}%",
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = if (isSuperReady) Color.White else Color.Gray
+                                    )
+                                }
+                            }
                         }
 
-                        // FORBIDDEN UNLEASHED ULTIMATE (Purple/Black)
-                        val forbiddenUnlocked = stats?.forbiddenModeUnlocked == true
+                        // FORBIDDEN DEMONIC ULTIMATE (Wide glowing bar at center bottom)
+                        val matchesStats = stats?.forbiddenModeUnlocked == true
+                        val readyU = ultimateCharge >= 100f
                         Box(
                             modifier = Modifier
-                                .width(184.dp)
-                                .height(44.dp)
-                                .clip(RoundedCornerShape(8.dp))
+                                .fillMaxWidth()
+                                .height(38.dp)
+                                .clip(RoundedCornerShape(10.dp))
                                 .background(
-                                    if (forbiddenUnlocked && ultimateCharge >= 100f) Color(0xFF5A009C)
-                                    else if (forbiddenUnlocked) Color(0xFF20132C)
-                                    else Color(0xFF15151A)
+                                    if (matchesStats && readyU) Color(0xFF440066)
+                                    else if (matchesStats) Color(0xFF1E1325)
+                                    else Color(0xFF141416)
                                 )
                                 .border(
                                     1.dp,
-                                    if (forbiddenUnlocked && ultimateCharge >= 100f) Color(0xFFB300FF)
-                                    else Color(0xFF2C2C35),
-                                    RoundedCornerShape(8.dp)
+                                    if (matchesStats && readyU) Color(0xFFB300FF) else Color(0xFF333336),
+                                    RoundedCornerShape(10.dp)
                                 )
-                                .clickable(enabled = forbiddenUnlocked && ultimateCharge >= 100f) {
+                                .clickable(enabled = matchesStats && readyU) {
                                     viewModel.triggerPlayerForbiddenUltimate()
                                 },
                             contentAlignment = Alignment.Center
                         ) {
-                            if (forbiddenUnlocked) {
+                            if (matchesStats) {
                                 Text(
-                                    text = if (ultimateCharge >= 100f) "🔥 FORBIDDEN ULTIMATE HAZIR! 🔥"
-                                    else "FORBIDDEN ULTIMATE: ${ultimateCharge.toInt()}%",
-                                    fontSize = 11.sp,
+                                    text = if (readyU) "🔥 FORBIDDEN ULTIMATE HAZIR! 🔥" else "ULTIMATE: ${ultimateCharge.toInt()}%",
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.Black,
-                                    color = if (ultimateCharge >= 100f) Color.White else Color(0x99B300FF)
+                                    color = if (readyU) Color.White else Color(0x99B300FF),
+                                    letterSpacing = 1.sp
                                 )
                             } else {
                                 Text(
                                     text = "🔒 FORBIDDEN ULTIMATE KİLİTLİ",
-                                    fontSize = 10.sp,
+                                    fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF6E6E77)
+                                    color = Color.Gray
                                 )
                             }
+                        }
+                    }
+
+                    // JOYSTICK 2 & 3 (Right hand): Dual Stacked direction joysticks!
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        
+                        // JOYSTICK 3 (Top right): Dedicated turning strafing controller
+                        // Allows setting looking angle independent of movement!
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "BAKIŞ / STRAFE YÖNÜ",
+                                fontSize = 7.sp,
+                                fontWeight = FontWeight.Black,
+                                color = Color(0xFF00FFCC),
+                                letterSpacing = 0.5.sp,
+                                modifier = Modifier.padding(bottom = 2.dp)
+                            )
+                            VirtualJoystick(
+                                modifier = Modifier
+                                    .testTag("turning_joystick")
+                                    .size(75.dp)
+                                    .shadow(4.dp, CircleShape),
+                                size = 75.dp,
+                                onValueChange = { offset ->
+                                    viewModel.updatePlayerFacing(offset)
+                                }
+                            )
+                        }
+
+                        // JOYSTICK 2 (Bottom right): Main Action/Aim shooting joystick
+                        // Aim and instant fire!
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "SALDIRI / HEDEF AL",
+                                fontSize = 7.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFFF003C),
+                                letterSpacing = 0.5.sp,
+                                modifier = Modifier.padding(bottom = 2.dp)
+                            )
+                            VirtualJoystick(
+                                modifier = Modifier
+                                    .testTag("action_joystick")
+                                    .shadow(6.dp, CircleShape),
+                                size = 95.dp,
+                                onValueChange = { offset ->
+                                    viewModel.updatePlayerFacing(offset)
+                                    if (offset.x != 0f || offset.y != 0f) {
+                                        viewModel.triggerPlayerNormalAttack()
+                                    }
+                                }
+                            )
                         }
                     }
                 }
             }
         }
 
-        // Victory / Defeat outcome overlays
+        // Victory / Defeat outcome card alert modal
         gameOver?.let { outcome ->
             val victory = outcome == "VICTORY"
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color(0xE6050508)),
+                    .background(Color(0xE6050508))
+                    .clickable(enabled = false) {},
                 contentAlignment = Alignment.Center
             ) {
                 Card(
@@ -486,8 +827,8 @@ fun SimulationScreen(
                         )
                         Spacer(modifier = Modifier.height(10.dp))
                         Text(
-                            text = if (victory) "Tüm offline yapay zeka rakipleri arena kumlarına gömdün."
-                            else "Rakipler bedenini parçalayıp ruhunu feda ettiler.",
+                            text = if (victory) "Seçtiğin gladyatör yapay zeka rakipleri dize getirdi ve rüştünü kanıtladı!"
+                            else "Rakipler daha çevik davrandı ve seni arenaya gömdü.",
                             fontSize = 12.sp,
                             color = Color(0xFF8A8A93),
                             textAlign = TextAlign.Center
@@ -495,7 +836,7 @@ fun SimulationScreen(
 
                         Spacer(modifier = Modifier.height(20.dp))
 
-                        // Rewards breakdown
+                        // Rewards panel
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -535,47 +876,6 @@ fun SimulationScreen(
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-fun RoundActionButton(
-    label: String,
-    subtitle: String,
-    value: Float,
-    max: Float,
-    color: Color,
-    activeColor: Color = Color.White,
-    onClick: () -> Unit
-) {
-    val full = value >= max
-    Box(
-        modifier = Modifier
-            .size(80.dp)
-            .clip(CircleShape)
-            .background(if (full) activeColor else color.copy(alpha = 0.15f))
-            .border(
-                2.dp,
-                if (full) Color.White else color.copy(alpha = 0.5f),
-                CircleShape
-            )
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = label,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = if (full) Color.Black else Color.White
-            )
-            Text(
-                text = if (full) "AKTİF" else "${value.toInt()}%",
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (full) Color.Black else color
-            )
         }
     }
 }
