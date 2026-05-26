@@ -1,0 +1,6 @@
+{
+  "name": "Shadow Brawl",
+  "description": "Retro-arcade style offline dark gladiator 2D combat arena with rich brawlers, dynamic maps, dynamic blood/gore physics simulator, custom progression, and comprehensive designer guide.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
